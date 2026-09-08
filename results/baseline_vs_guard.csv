@@ -1,0 +1,9 @@
+Metric,Baseline,Idempotent Guard
+Events received,1000,1000
+Unique transactions,800,800
+Duplicate attempts,200,200
+Target records created,1000,800
+Duplicate business outcomes,200,0
+Duplicates prevented,0,200
+Duplicate Prevention Rate,0.0%,100.0%
+Processing failures,0,0
