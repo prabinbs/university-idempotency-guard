@@ -7,3 +7,7 @@ duplicate business outcomes,200,0
 duplicates prevented,0,200
 prevention rate,0.0%,100.0%
 failed events,0,0
+retries,200,200
+DLQ events,0,1
+out-of-order events,0,1
+expired events,0,1

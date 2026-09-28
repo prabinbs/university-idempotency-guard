@@ -49,10 +49,11 @@ class EventResponse(BaseModel):
     """
     Structured acknowledgement response returned to event queue / broker.
     """
-    status: str = Field(..., description="Processing outcome: 'processed', 'duplicate', or 'failed'")
+    status: str = Field(..., description="Processing outcome: 'processed', 'duplicate', 'out_of_order', 'stale', 'expired', 'failed', or 'dlq'")
     transaction_id: str
     message_id: str
     message: str
+    event_version: Optional[int] = Field(default=1, description="Event version tracked")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -64,6 +65,9 @@ class MetricsSummary(BaseModel):
     unique_transactions_processed: int
     duplicate_events_detected: int
     failed_events: int
+    out_of_order_events: int = 0
+    expired_events: int = 0
+    dlq_events: int = 0
     prevention_rate_percent: float
 
 
@@ -84,7 +88,8 @@ class ProcessedEventRecord(Base):
     transaction_id = Column(String(64), nullable=False, index=True)
     event_type = Column(String(64), nullable=False)
     source_system = Column(String(64), nullable=False)
-    status = Column(String(32), nullable=False, default="RECEIVED")  # RECEIVED, PROCESSING, PROCESSED, DUPLICATE, FAILED
+    status = Column(String(32), nullable=False, default="RECEIVED")  # RECEIVED, PROCESSING, PROCESSED, DUPLICATE, OUT_OF_ORDER, STALE, EXPIRED, FAILED, DLQ
+    event_version = Column(Integer, default=1, nullable=False)
     first_seen_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     processed_at = Column(DateTime, nullable=True)
     retry_count = Column(Integer, default=0)
@@ -108,6 +113,7 @@ class TransactionRecord(Base):
     event_type = Column(String(64), nullable=False)
     source_system = Column(String(64), nullable=False)
     amount = Column(Float, nullable=True)
+    event_version = Column(Integer, default=1, nullable=False)
     processed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     status = Column(String(32), default="COMPLETED", nullable=False)
 
@@ -126,5 +132,30 @@ class BaselineTransactionRecord(Base):
     event_type = Column(String(64), nullable=False)
     source_system = Column(String(64), nullable=False)
     amount = Column(Float, nullable=True)
+    event_version = Column(Integer, default=1, nullable=False)
     processed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     status = Column(String(32), default="COMPLETED", nullable=False)
+
+
+class DeadLetterEventRecord(Base):
+    """
+    Dead Letter Queue (DLQ) persistent storage (Improvement 5).
+    Safely captures poisoned or repeatedly failing events after MAX_RETRIES.
+    """
+    __tablename__ = "dead_letter_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(String(64), nullable=False, index=True)
+    transaction_id = Column(String(64), nullable=False, index=True)
+    event_type = Column(String(64), nullable=False)
+    source_system = Column(String(64), nullable=True)
+    failure_reason = Column(String(256), nullable=False)
+    retry_count = Column(Integer, default=0, nullable=False)
+    failed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    payload = Column(String(1024), nullable=True)
+
+    __table_args__ = (
+        Index("idx_dlq_txn", "transaction_id"),
+        Index("idx_dlq_msg", "message_id"),
+    )
+
